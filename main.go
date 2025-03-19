@@ -32,7 +32,7 @@ func main() {
 
 	// Log startup message
 	if err := logRepo.Create("Server starting", "info"); err != nil {
-		log.Printf("Failed to create startup log: %v", err)
+		logRepo.Create("Failed to create startup log: "+err.Error(), "error")
 	}
 
 	// Create controllers
