@@ -1,21 +1,70 @@
 package main
 
 import (
-	"fmt"
+	"github.com/gorilla/mux"
+	"log"
+	"net/http"
+	"reminderai/controller"
+	"reminderai/db"
+	"reminderai/repository"
 )
 
-//TIP <p>To run your code, right-click the code and select <b>Run</b>.</p> <p>Alternatively, click
-// the <icon src="AllIcons.Actions.Execute"/> icon in the gutter and select the <b>Run</b> menu item from here.</p>
-
 func main() {
-	//TIP <p>Press <shortcut actionId="ShowIntentionActions"/> when your caret is at the underlined text
-	// to see how GoLand suggests fixing the warning.</p><p>Alternatively, if available, click the lightbulb to view possible fixes.</p>
-	s := "gopher"
-	fmt.Println("Hello and welcome, %s!", s)
+	// Create a connection pool
+	pool, err := db.NewPool()
+	if err != nil {
+		log.Fatalf("Unable to create connection pool: %v", err)
+	}
+	defer pool.Close()
+	// Print initial pool stats
+	//db.PrintPoolStats(pool)
 
-	for i := 1; i <= 5; i++ {
-		//TIP <p>To start your debugging session, right-click your code in the editor and select the Debug option.</p> <p>We have set one <icon src="AllIcons.Debugger.Db_set_breakpoint"/> breakpoint
-		// for you, but you can always add more by pressing <shortcut actionId="ToggleLineBreakpoint"/>.</p>
-		fmt.Println("i =", 100/i)
+	// Optionally monitor pool stats every 30 seconds
+	//db.MonitorPoolStats(pool, 1*time.Second)
+	// Initialize the schema
+	if err := db.InitSchema(pool); err != nil {
+		log.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	// Create repositories
+	bookRepo := repository.NewBookRepository(pool)
+	logRepo := repository.NewLogRepository(pool)
+
+	// Log startup message
+	if err := logRepo.Create("Server starting", "info"); err != nil {
+		log.Printf("Failed to create startup log: %v", err)
+	}
+
+	// Create controllers
+	bookController := controller.NewBookController(bookRepo, logRepo)
+	logController := controller.NewLogController(logRepo)
+
+	// Setup routes
+	router := mux.NewRouter()
+	router.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("pong"))
+	}).Methods("GET")
+
+	router.HandleFunc("/books", bookController.Create).Methods("POST")
+	router.HandleFunc("/books/{id}", bookController.Update).Methods("PUT")
+	router.HandleFunc("/books", bookController.GetAll).Methods("GET")
+	router.HandleFunc("/logs", logController.GetAll).Methods("GET")
+
+	// Start the server
+	log.Println("Starting server on :8080")
+	if err := http.ListenAndServe(":8080", router); err != nil {
+		logRepo.Create("Server failed to start: "+err.Error(), "fatal")
+		log.Fatalf("Failed to start server: %v", err)
 	}
 }
+
+//Gin
+//func main() {
+//	router := gin.Default()
+//	router.GET("/ping", func(c *gin.Context) {
+//		c.JSON(200, gin.H{
+//			"message": "pong",
+//		})
+//	})
+//	router.Run() // listen and serve on 0.0.0.0:8080
+//}
